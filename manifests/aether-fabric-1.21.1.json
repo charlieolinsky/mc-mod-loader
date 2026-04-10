@@ -1,0 +1,33 @@
+{
+  "name": "Aether Friends",
+  "profileName": "Aether Friends",
+  "instanceDirName": "aether-friends-1.21.1",
+  "minecraftVersion": "1.21.1",
+  "loader": {
+    "type": "fabric",
+    "version": "0.19.1"
+  },
+  "mods": [
+    {
+      "slug": "aether",
+      "name": "The Aether",
+      "filename": "aether-1.21.1-1.5.11-fabric.jar",
+      "url": "https://cdn.modrinth.com/data/YhmgMVyu/versions/NSqdh1i9/aether-1.21.1-1.5.11-fabric.jar",
+      "sha1": "1d9db7437ecc7b5ebab2dd918abca63908152f3a"
+    },
+    {
+      "slug": "owo-lib",
+      "name": "oωo-lib",
+      "filename": "owo-lib-0.12.15.4+1.21.jar",
+      "url": "https://cdn.modrinth.com/data/ccKDOlHs/versions/JB1fLQnc/owo-lib-0.12.15.4%2B1.21.jar",
+      "sha1": "45725e6d33b624e565a7a6e5d3627af40814288d"
+    },
+    {
+      "slug": "fabric-api",
+      "name": "Fabric API",
+      "filename": "fabric-api-0.116.10+1.21.1.jar",
+      "url": "https://cdn.modrinth.com/data/P7dR8mSH/versions/ID8pq1x1/fabric-api-0.116.10%2B1.21.1.jar",
+      "sha1": "22b506a0770f148f46737329e8cae68aaefe3165"
+    }
+  ]
+}
