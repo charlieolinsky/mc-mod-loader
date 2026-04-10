@@ -99,6 +99,7 @@ if (-not $ProfileName) {
 
 $instanceDir = Join-Path $MinecraftDir $manifest.instanceDirName
 $modsDir = Join-Path $instanceDir 'mods'
+$shaderpacksDir = Join-Path $instanceDir 'shaderpacks'
 $fabricVersionId = "fabric-loader-$($manifest.loader.version)-$($manifest.minecraftVersion)"
 $javaPath = Get-JavaPath -MinecraftDir $MinecraftDir
 
@@ -114,7 +115,7 @@ if ($DryRun) {
 }
 
 # Create the isolated instance directory and back up launcher configuration first.
-New-Item -ItemType Directory -Force -Path $modsDir | Out-Null
+New-Item -ItemType Directory -Force -Path $modsDir, $shaderpacksDir | Out-Null
 $backupDir = Join-Path $MinecraftDir 'copilot-backups'
 New-Item -ItemType Directory -Force -Path $backupDir | Out-Null
 $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
@@ -151,6 +152,33 @@ foreach ($mod in $manifest.mods) {
     }
 }
 
+# Also install a few pinned shader packs so friends can enable one immediately in-game.
+foreach ($shaderpack in @($manifest.shaderpacks)) {
+    if (-not $shaderpack) {
+        continue
+    }
+
+    Get-ChildItem -Path $shaderpacksDir -Filter "$($shaderpack.slug)*.zip" -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -ne $shaderpack.filename } |
+        Remove-Item -Force -ErrorAction SilentlyContinue
+
+    $destination = Join-Path $shaderpacksDir $shaderpack.filename
+    $needsDownload = $true
+    if (Test-Path $destination) {
+        $currentSha = (Get-FileHash -Path $destination -Algorithm SHA1).Hash.ToLowerInvariant()
+        if ($currentSha -eq $shaderpack.sha1.ToLowerInvariant()) {
+            Write-Info "Already up to date: $($shaderpack.name)"
+            $needsDownload = $false
+        }
+    }
+
+    if ($needsDownload) {
+        Write-Info "Downloading $($shaderpack.name)"
+        Invoke-WebRequest -Uri $shaderpack.url -OutFile $destination
+        Verify-Sha1 -Path $destination -Expected $shaderpack.sha1
+    }
+}
+
 # Update the launcher profile so the user can select the prepared instance immediately.
 $profilesJson = Get-Content -Path $launcherProfiles -Raw | ConvertFrom-Json
 $profileObject = [pscustomobject]@{
@@ -168,3 +196,5 @@ $profilesJson | ConvertTo-Json -Depth 10 | Set-Content -Path $launcherProfiles -
 
 Write-Info "Done. Open the Minecraft Launcher and select the '$ProfileName' profile."
 Write-Info "Your Aether mods live in: $modsDir"
+Write-Info "Default shader packs live in: $shaderpacksDir"
+Write-Info 'In-game: Options -> Video Settings -> Shaders, then choose one of the installed packs.'

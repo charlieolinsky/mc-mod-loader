@@ -53,9 +53,9 @@ function run(argv) {
 JXA
 }
 
-# Emit the mod list as tab-separated rows for the download/update loop.
-json_mod_lines() {
-  /usr/bin/osascript -l JavaScript - "$1" <<'JXA'
+# Emit a manifest section as tab-separated rows for the download/update loop.
+json_artifact_lines() {
+  /usr/bin/osascript -l JavaScript - "$1" "$2" <<'JXA'
 ObjC.import('Foundation');
 function readText(path) {
   const value = $.NSString.stringWithContentsOfFileEncodingError(path, $.NSUTF8StringEncoding, null);
@@ -63,8 +63,9 @@ function readText(path) {
 }
 function run(argv) {
   const data = JSON.parse(readText(argv[0]));
-  return data.mods.map(function (mod) {
-    return [mod.slug, mod.name, mod.filename, mod.url, mod.sha1].join('\t');
+  const items = data[argv[1]] || [];
+  return items.map(function (item) {
+    return [item.slug, item.name, item.filename, item.url, item.sha1].join('\t');
   }).join('\n');
 }
 JXA
@@ -144,11 +145,12 @@ verify_sha1() {
   [[ "$actual" == "$expected" ]] || fail "Checksum mismatch for $(basename "$file_path"): expected $expected, got $actual"
 }
 
-remove_old_versions() {
-  local slug="$1"
-  local keep_filename="$2"
+remove_old_files() {
+  local target_dir="$1"
+  local slug="$2"
+  local keep_filename="$3"
   local existing
-  for existing in "$MODS_DIR"/"$slug"*.jar; do
+  for existing in "$target_dir"/"$slug"*; do
     [[ -e "$existing" ]] || continue
     if [[ "$(basename "$existing")" != "$keep_filename" ]]; then
       rm -f "$existing"
@@ -233,6 +235,7 @@ fi
 
 INSTANCE_DIR="$MINECRAFT_DIR/$INSTANCE_DIR_NAME"
 MODS_DIR="$INSTANCE_DIR/mods"
+SHADERPACKS_DIR="$INSTANCE_DIR/shaderpacks"
 FABRIC_VERSION_ID="fabric-loader-${FABRIC_LOADER_VERSION}-${MC_VERSION}"
 BACKUP_DIR="$MINECRAFT_DIR/copilot-backups"
 JAVA_BIN="$(find_java)"
@@ -250,7 +253,7 @@ if [[ "$DRY_RUN" -eq 1 ]]; then
 fi
 
 # Back up the launcher config before installing Fabric or touching profile data.
-mkdir -p "$MODS_DIR" "$BACKUP_DIR"
+mkdir -p "$MODS_DIR" "$SHADERPACKS_DIR" "$BACKUP_DIR"
 BACKUP_FILE="$BACKUP_DIR/launcher_profiles.$(date +%Y%m%d-%H%M%S).json"
 cp "$LAUNCHER_PROFILES" "$BACKUP_FILE"
 log "Backed up launcher profiles to $BACKUP_FILE"
@@ -267,7 +270,7 @@ log "Installing Fabric loader ${FABRIC_LOADER_VERSION} for Minecraft ${MC_VERSIO
 # Download or refresh each pinned mod and verify its checksum before use.
 while IFS=$'\t' read -r slug mod_name filename url sha1; do
   [[ -n "$slug" ]] || continue
-  remove_old_versions "$slug" "$filename"
+  remove_old_files "$MODS_DIR" "$slug" "$filename"
   destination="$MODS_DIR/$filename"
 
   if [[ -f "$destination" ]]; then
@@ -281,10 +284,31 @@ while IFS=$'\t' read -r slug mod_name filename url sha1; do
   log "Downloading $mod_name"
   download_file "$url" "$destination"
   verify_sha1 "$destination" "$sha1"
-done < <(json_mod_lines "$MANIFEST_FILE")
+done < <(json_artifact_lines "$MANIFEST_FILE" 'mods')
+
+# Also install a few pinned shader packs so friends can enable one immediately in-game.
+while IFS=$'\t' read -r slug pack_name filename url sha1; do
+  [[ -n "$slug" ]] || continue
+  remove_old_files "$SHADERPACKS_DIR" "$slug" "$filename"
+  destination="$SHADERPACKS_DIR/$filename"
+
+  if [[ -f "$destination" ]]; then
+    current_sha1="$(shasum -a 1 "$destination" | awk '{print $1}')"
+    if [[ "$current_sha1" == "$sha1" ]]; then
+      log "Already up to date: $pack_name"
+      continue
+    fi
+  fi
+
+  log "Downloading $pack_name"
+  download_file "$url" "$destination"
+  verify_sha1 "$destination" "$sha1"
+done < <(json_artifact_lines "$MANIFEST_FILE" 'shaderpacks')
 
 # Finally, point the launcher profile at the isolated instance directory we prepared.
 update_launcher_profile "$LAUNCHER_PROFILES" "$PROFILE_NAME" "$FABRIC_VERSION_ID" "$INSTANCE_DIR" >/dev/null
 
 log "Done. Open the Minecraft Launcher and select the '$PROFILE_NAME' profile."
 log "Your Aether mods live in: $MODS_DIR"
+log "Default shader packs live in: $SHADERPACKS_DIR"
+log "In-game: Options -> Video Settings -> Shaders, then choose one of the installed packs."
