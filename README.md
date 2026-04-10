@@ -6,6 +6,8 @@ A lightweight, shareable installer for getting **`The Aether`** running on the *
 
 This project is built for the simple use case: send a friend **one command**, have them run it, and get everyone onto the same tested mod setup.
 
+> **Disclaimer:** This repository and installer were AI-assisted/generated and should be reviewed and used at your own discretion.
+
 ## Features
 
 - ✅ One-command install flow for the **official launcher**

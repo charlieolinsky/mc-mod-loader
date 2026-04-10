@@ -1,3 +1,5 @@
+# Install the pinned Aether pack into a dedicated official-launcher profile on Windows.
+# Like the macOS script, this keeps the setup isolated and safe to re-run.
 param(
     [string]$ManifestPath,
     [string]$ManifestUrl,
@@ -16,6 +18,7 @@ function Fail($Message) {
     throw "[aether-installer] $Message"
 }
 
+# Allow the installer to work from either a local repo checkout or a hosted raw URL.
 function Resolve-ManifestFile {
     param(
         [string]$ManifestPath,
@@ -36,6 +39,8 @@ function Resolve-ManifestFile {
     return $DefaultManifest
 }
 
+# Prefer the Java runtime bundled by the official launcher before falling back
+# to a system-wide Java install.
 function Get-JavaPath {
     param([string]$MinecraftDir)
 
@@ -102,11 +107,13 @@ Write-Info "Minecraft dir: $MinecraftDir"
 Write-Info "Instance dir: $instanceDir"
 Write-Info "Java: $javaPath"
 
+# In dry-run mode we stop after validating the environment and manifest contents.
 if ($DryRun) {
     Write-Info 'Dry run complete. No files were changed.'
     exit 0
 }
 
+# Create the isolated instance directory and back up launcher configuration first.
 New-Item -ItemType Directory -Force -Path $modsDir | Out-Null
 $backupDir = Join-Path $MinecraftDir 'copilot-backups'
 New-Item -ItemType Directory -Force -Path $backupDir | Out-Null
@@ -117,9 +124,11 @@ $installerVersion = ((Invoke-RestMethod -Uri 'https://meta.fabricmc.net/v2/versi
 $installerJar = Join-Path ([System.IO.Path]::GetTempPath()) "fabric-installer-$installerVersion.jar"
 Invoke-WebRequest -Uri "https://maven.fabricmc.net/net/fabricmc/fabric-installer/$installerVersion/fabric-installer-$installerVersion.jar" -OutFile $installerJar
 
+# Install the pinned Fabric loader into the user's normal official-launcher directory.
 Write-Info "Installing Fabric loader $($manifest.loader.version) for Minecraft $($manifest.minecraftVersion)"
 & $javaPath -jar $installerJar client -dir $MinecraftDir -mcversion $manifest.minecraftVersion -loader $manifest.loader.version -noprofile | Out-Null
 
+# Download or refresh each mod defined in the manifest, removing stale versions by slug.
 foreach ($mod in $manifest.mods) {
     Get-ChildItem -Path $modsDir -Filter "$($mod.slug)*.jar" -ErrorAction SilentlyContinue |
         Where-Object { $_.Name -ne $mod.filename } |
@@ -142,6 +151,7 @@ foreach ($mod in $manifest.mods) {
     }
 }
 
+# Update the launcher profile so the user can select the prepared instance immediately.
 $profilesJson = Get-Content -Path $launcherProfiles -Raw | ConvertFrom-Json
 $profileObject = [pscustomobject]@{
     created       = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ')

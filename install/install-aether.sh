@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Install the pinned Aether pack into a dedicated official-launcher profile.
+# The script stays lightweight by using the launcher's own directories and by
+# reading a small manifest that defines exactly which mod files to download.
 usage() {
   cat <<'EOF'
 Usage:
@@ -26,6 +29,7 @@ require_cmd() {
   command -v "$1" >/dev/null 2>&1 || fail "Missing required command: $1"
 }
 
+# Read a single value from the JSON manifest without requiring jq.
 json_get() {
   /usr/bin/osascript -l JavaScript - "$1" "$2" <<'JXA'
 ObjC.import('Foundation');
@@ -49,6 +53,7 @@ function run(argv) {
 JXA
 }
 
+# Emit the mod list as tab-separated rows for the download/update loop.
 json_mod_lines() {
   /usr/bin/osascript -l JavaScript - "$1" <<'JXA'
 ObjC.import('Foundation');
@@ -65,6 +70,7 @@ function run(argv) {
 JXA
 }
 
+# Create or update the official launcher profile so it points at our isolated gameDir.
 update_launcher_profile() {
   /usr/bin/osascript -l JavaScript - "$1" "$2" "$3" "$4" <<'JXA'
 ObjC.import('Foundation');
@@ -104,6 +110,8 @@ function run(argv) {
 JXA
 }
 
+# Prefer the Java runtime bundled by the official launcher so friends do not
+# need to install Java separately in the common case.
 find_java() {
   local candidate
 
@@ -148,6 +156,7 @@ remove_old_versions() {
   done
 }
 
+# Parse CLI overrides so the same script can be used locally or from a hosted URL.
 MANIFEST_INPUT=""
 PROFILE_NAME_OVERRIDE="${PROFILE_NAME:-}"
 MINECRAFT_DIR="${MINECRAFT_DIR:-$HOME/Library/Application Support/minecraft}"
@@ -234,16 +243,19 @@ log "Instance dir: $INSTANCE_DIR"
 log "Launcher profile: $PROFILE_NAME"
 log "Java: $JAVA_BIN"
 
+# Stop here in dry-run mode after validating paths, Java detection, and manifest parsing.
 if [[ "$DRY_RUN" -eq 1 ]]; then
   log "Dry run complete. No files were changed."
   exit 0
 fi
 
+# Back up the launcher config before installing Fabric or touching profile data.
 mkdir -p "$MODS_DIR" "$BACKUP_DIR"
 BACKUP_FILE="$BACKUP_DIR/launcher_profiles.$(date +%Y%m%d-%H%M%S).json"
 cp "$LAUNCHER_PROFILES" "$BACKUP_FILE"
 log "Backed up launcher profiles to $BACKUP_FILE"
 
+# Install the pinned Fabric loader version into the user's normal launcher directory.
 INSTALLER_VERSION="$(curl -fsSL 'https://meta.fabricmc.net/v2/versions/installer' | grep -m1 -Eo '"version"[[:space:]]*:[[:space:]]*"[^"]*"' | sed -E 's/.*"([^"]*)"/\1/')"
 [[ -n "$INSTALLER_VERSION" ]] || fail "Could not determine the latest Fabric installer version"
 INSTALLER_JAR="$TMP_DIR/fabric-installer-${INSTALLER_VERSION}.jar"
@@ -252,6 +264,7 @@ log "Installing Fabric loader ${FABRIC_LOADER_VERSION} for Minecraft ${MC_VERSIO
 "$JAVA_BIN" -jar "$INSTALLER_JAR" client -dir "$MINECRAFT_DIR" -mcversion "$MC_VERSION" -loader "$FABRIC_LOADER_VERSION" -noprofile
 [[ -d "$MINECRAFT_DIR/versions/$FABRIC_VERSION_ID" ]] || fail "Fabric install did not create $FABRIC_VERSION_ID"
 
+# Download or refresh each pinned mod and verify its checksum before use.
 while IFS=$'\t' read -r slug mod_name filename url sha1; do
   [[ -n "$slug" ]] || continue
   remove_old_versions "$slug" "$filename"
@@ -270,6 +283,7 @@ while IFS=$'\t' read -r slug mod_name filename url sha1; do
   verify_sha1 "$destination" "$sha1"
 done < <(json_mod_lines "$MANIFEST_FILE")
 
+# Finally, point the launcher profile at the isolated instance directory we prepared.
 update_launcher_profile "$LAUNCHER_PROFILES" "$PROFILE_NAME" "$FABRIC_VERSION_ID" "$INSTANCE_DIR" >/dev/null
 
 log "Done. Open the Minecraft Launcher and select the '$PROFILE_NAME' profile."
