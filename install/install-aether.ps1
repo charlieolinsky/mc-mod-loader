@@ -40,19 +40,17 @@ function Resolve-ManifestFile {
 }
 
 # Prefer the Java runtime bundled by the official launcher before falling back
-# to a system-wide Java install.
+# to a system-wide Java install.  We need java.exe (console subsystem), not
+# javaw.exe, so the Fabric installer can write to stdout/stderr and PowerShell
+# will properly wait for it to finish.
 function Get-JavaPath {
     param([string]$MinecraftDir)
 
-    $bundled = Get-ChildItem -Path (Join-Path $MinecraftDir 'runtime') -Filter javaw.exe -Recurse -ErrorAction SilentlyContinue |
+    $bundled = Get-ChildItem -Path (Join-Path $MinecraftDir 'runtime') -Filter java.exe -Recurse -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -eq 'java.exe' } |
         Select-Object -First 1 -ExpandProperty FullName
     if ($bundled) {
         return $bundled
-    }
-
-    $cmd = Get-Command javaw.exe -ErrorAction SilentlyContinue
-    if ($cmd) {
-        return $cmd.Source
     }
 
     $cmd = Get-Command java.exe -ErrorAction SilentlyContinue
@@ -127,7 +125,10 @@ Invoke-WebRequest -Uri "https://maven.fabricmc.net/net/fabricmc/fabric-installer
 
 # Install the pinned Fabric loader into the user's normal official-launcher directory.
 Write-Info "Installing Fabric loader $($manifest.loader.version) for Minecraft $($manifest.minecraftVersion)"
-& $javaPath -jar $installerJar client -dir $MinecraftDir -mcversion $manifest.minecraftVersion -loader $manifest.loader.version -noprofile | Out-Null
+& $javaPath -jar $installerJar client -dir $MinecraftDir -mcversion $manifest.minecraftVersion -loader $manifest.loader.version -noprofile 2>&1 | Out-Null
+if ($LASTEXITCODE -ne 0) {
+    Fail "Fabric installer exited with code $LASTEXITCODE"
+}
 
 # Download or refresh each mod defined in the manifest, removing stale versions by slug.
 foreach ($mod in $manifest.mods) {
@@ -192,7 +193,10 @@ $profileObject = [pscustomobject]@{
 }
 
 $profilesJson.profiles | Add-Member -NotePropertyName $ProfileName -NotePropertyValue $profileObject -Force
-$profilesJson | ConvertTo-Json -Depth 10 | Set-Content -Path $launcherProfiles -Encoding UTF8
+# Windows PowerShell 5.1's -Encoding UTF8 writes a BOM that the Minecraft launcher
+# (Gson) cannot parse, so use .NET directly to write BOM-free UTF-8.
+$utf8NoBom = New-Object System.Text.UTF8Encoding $false
+[System.IO.File]::WriteAllText($launcherProfiles, ($profilesJson | ConvertTo-Json -Depth 10), $utf8NoBom)
 
 Write-Info "Done. Open the Minecraft Launcher and select the '$ProfileName' profile."
 Write-Info "Your Aether mods live in: $modsDir"
